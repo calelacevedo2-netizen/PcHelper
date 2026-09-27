@@ -1,0 +1,6 @@
+{
+  "name": "PC Gaming Helper",
+  "description": "PC gaming performance checker, FPS diagnostic analyzer, benchmark rating evaluator, exact laptop reality evaluator, and hardware tier rating.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

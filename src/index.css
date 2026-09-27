@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Layout Spacing & Overlap Prevention
+   ========================================================================== */
+
+/* Spacing between stacked sections: Hardware Specs, Results, and Benchmarks */
+#pc-checker-form {
+  margin-bottom: 2rem;
+}
+
+#results-display {
+  margin-top: 2rem;
+  padding-top: 0.5rem;
+}
+
+#results-display > * + * {
+  margin-top: 1.5rem;
+}
+
+#overall-result-card,
+#limitation-card,
+#why-recommendation-card,
+#recommended-settings-card {
+  margin-bottom: 1.25rem;
+  position: relative;
+}
+
+/* Real-world benchmark card spacing */
+#overall-result-card div[class*="border-indigo-900"] {
+  margin-top: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+/* Text containers display & wrapping rules to prevent collisions */
+h1, h2, h3, h4, h5, h6,
+p,
+label {
+  display: block;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+/* Flex children text safety */
+.flex,
+.inline-flex {
+  min-width: 0;
+}
+
+.flex > div,
+.flex > span,
+.flex > p {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.flex-wrap {
+  row-gap: 0.5rem;
+}
+
+/* Section text overflow protection */
+#pc-checker-form p,
+#results-display p,
+#results-display span,
+#results-display div {
+  overflow-wrap: break-word;
+}
+
+#pc-checker-form .grid > div,
+#results-display .grid > div {
+  min-width: 0;
+}
