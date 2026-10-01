@@ -91,6 +91,10 @@ export default function App() {
   // Result state for Game Checker
   const [result, setResult] = useState<RecommendationResult | null>(null);
 
+  // Company filter state for Game Checker CPU and GPU selectors (persists while using Game Checker)
+  const [checkerCpuCompanyFilter, setCheckerCpuCompanyFilter] = useState<'All' | 'AMD' | 'Intel'>('All');
+  const [checkerGpuCompanyFilter, setCheckerGpuCompanyFilter] = useState<'All' | 'NVIDIA' | 'AMD' | 'Intel'>('All');
+
   // Result state for PC Tier
   const [tierResult, setTierResult] = useState<PcTierResult | null>(null);
 
@@ -219,6 +223,7 @@ export default function App() {
       return {
         id: gpu.id,
         name: gpu.name,
+        manufacturer: gpu.manufacturer,
         subtitle: `${gpu.manufacturer} • ${gpu.type === 'laptop' ? 'Laptop GPU' : 'Desktop'} • ${gpu.vramVariants ? gpu.vramVariants.map((v) => `${v.vram}GB`).join('/') : `${gpu.vram} GB`} VRAM`,
         isLaptop: gpu.type === 'laptop',
         vram: gpu.vram,
@@ -257,6 +262,7 @@ export default function App() {
       return {
         id: cpu.id,
         name: cpu.name,
+        manufacturer: cpu.manufacturer,
         subtitle: `${cpu.manufacturer} • ${cpu.type === 'laptop' ? 'Mobile CPU' : 'Desktop CPU'} • ${cpu.generation || cpu.family || ''}${cpu.cores ? ` • ${cpu.cores}C/${cpu.threads || cpu.cores}T` : ''}`,
         isLaptop: cpu.type === 'laptop',
         badge: isFactoryOption ? `Factory Spec • ${selectedExactModel?.displayName}` : undefined,
@@ -950,6 +956,9 @@ export default function App() {
                       selectedId={selectedCpuId}
                       customName={customCpu?.name}
                       type="CPU"
+                      enableCompanyFilter={true}
+                      companyFilter={checkerCpuCompanyFilter}
+                      onCompanyFilterChange={(filter) => setCheckerCpuCompanyFilter(filter as 'All' | 'AMD' | 'Intel')}
                       onSelect={(opt) => {
                         setSelectedCpuId(opt.id);
                         setCustomCpu(null);
@@ -962,7 +971,11 @@ export default function App() {
                       }}
                     />
                     <p className="text-[11px] text-zinc-400 mt-1 flex items-center justify-between">
-                      <span>{cpuOptions.length} available</span>
+                      <span>
+                        {checkerCpuCompanyFilter !== 'All'
+                          ? `${cpuOptions.filter((c) => c.manufacturer === checkerCpuCompanyFilter).length} ${checkerCpuCompanyFilter} CPUs`
+                          : `${cpuOptions.length} available`}
+                      </span>
                       {selectedCpuId === 'amd-ryzen-7-170' && (
                         <span className="text-indigo-400 font-semibold truncate ml-1">
                           Zen 3+ Mobile
@@ -981,6 +994,9 @@ export default function App() {
                       selectedId={selectedGpuId}
                       customName={customGpu?.name}
                       type="GPU"
+                      enableCompanyFilter={true}
+                      companyFilter={checkerGpuCompanyFilter}
+                      onCompanyFilterChange={(filter) => setCheckerGpuCompanyFilter(filter as 'All' | 'NVIDIA' | 'AMD' | 'Intel')}
                       onSelect={(opt) => {
                         setSelectedGpuId(opt.id);
                         setCustomGpu(null);

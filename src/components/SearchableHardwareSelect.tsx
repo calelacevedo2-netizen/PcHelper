@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Search, ChevronDown, Check, AlertCircle, Laptop } from 'lucide-react';
+import { Search, ChevronDown, Check, AlertCircle, Laptop, Filter, X } from 'lucide-react';
+
+export type CompanyFilterOption = 'All' | 'NVIDIA' | 'AMD' | 'Intel';
 
 export interface SearchOption {
   id: string;
@@ -12,6 +14,77 @@ export interface SearchOption {
   aliases?: string[];
   generation?: string;
   family?: string;
+  manufacturer?: string;
+}
+
+export function getOptionManufacturer(
+  opt: SearchOption,
+  type: 'GPU' | 'CPU'
+): 'NVIDIA' | 'AMD' | 'Intel' | 'Other' {
+  if (opt.manufacturer) {
+    const m = opt.manufacturer.toUpperCase();
+    if (m.includes('NVIDIA')) return 'NVIDIA';
+    if (m.includes('AMD')) return 'AMD';
+    if (m.includes('INTEL')) return 'Intel';
+  }
+  const combined = `${opt.name} ${opt.subtitle || ''}`.toLowerCase();
+
+  if (type === 'GPU') {
+    if (
+      combined.includes('nvidia') ||
+      combined.includes('geforce') ||
+      combined.includes('rtx') ||
+      combined.includes('gtx') ||
+      combined.includes('gt 710') ||
+      combined.includes('gt 1030') ||
+      combined.includes('titan') ||
+      combined.includes('quadro')
+    ) {
+      return 'NVIDIA';
+    }
+    if (
+      combined.includes('amd') ||
+      combined.includes('radeon') ||
+      combined.includes('rx ') ||
+      combined.includes('vega') ||
+      combined.includes('rdna')
+    ) {
+      return 'AMD';
+    }
+    if (
+      combined.includes('intel') ||
+      combined.includes('arc') ||
+      combined.includes('iris') ||
+      combined.includes('hd graphics') ||
+      combined.includes('uhd') ||
+      combined.includes('battlemage') ||
+      combined.includes('alchemist')
+    ) {
+      return 'Intel';
+    }
+  } else {
+    // CPU
+    if (
+      combined.includes('amd') ||
+      combined.includes('ryzen') ||
+      combined.includes('threadripper') ||
+      combined.includes('athlon') ||
+      combined.includes('epyc')
+    ) {
+      return 'AMD';
+    }
+    if (
+      combined.includes('intel') ||
+      combined.includes('core') ||
+      combined.includes('xeon') ||
+      combined.includes('celeron') ||
+      combined.includes('pentium')
+    ) {
+      return 'Intel';
+    }
+  }
+
+  return 'Other';
 }
 
 interface SearchableHardwareSelectProps {
@@ -24,6 +97,9 @@ interface SearchableHardwareSelectProps {
   onCustomEntry?: (name: string, tier: 'entry' | 'mid' | 'high') => void;
   customName?: string | null;
   type: 'GPU' | 'CPU';
+  enableCompanyFilter?: boolean;
+  companyFilter?: CompanyFilterOption;
+  onCompanyFilterChange?: (filter: CompanyFilterOption) => void;
 }
 
 export const SearchableHardwareSelect: React.FC<SearchableHardwareSelectProps> = ({
@@ -35,37 +111,73 @@ export const SearchableHardwareSelect: React.FC<SearchableHardwareSelectProps> =
   onSelect,
   onCustomEntry,
   customName,
-  type
+  type,
+  enableCompanyFilter = false,
+  companyFilter,
+  onCompanyFilterChange
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [customTier, setCustomTier] = useState<'entry' | 'mid' | 'high'>('mid');
+  const [internalCompanyFilter, setInternalCompanyFilter] = useState<CompanyFilterOption>('All');
+  const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+
+  const activeCompanyFilter = companyFilter !== undefined ? companyFilter : internalCompanyFilter;
+
+  const handleFilterSelect = (filter: CompanyFilterOption) => {
+    if (onCompanyFilterChange) {
+      onCompanyFilterChange(filter);
+    } else {
+      setInternalCompanyFilter(filter);
+    }
+  };
 
   const selectedOption = options.find((opt) => opt.id === selectedId);
+
+  // Available company options for this hardware type
+  const companyOptions: CompanyFilterOption[] = useMemo(() => {
+    if (type === 'CPU') {
+      return ['All', 'AMD', 'Intel'];
+    }
+    return ['All', 'NVIDIA', 'AMD', 'Intel'];
+  }, [type]);
 
   // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setIsOpen(false);
+        setIsFilterMenuOpen(false);
+      } else if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
+        setIsFilterMenuOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Filter base options by company filter when active
+  const baseFilteredOptions = useMemo(() => {
+    if (!enableCompanyFilter || activeCompanyFilter === 'All') {
+      return options;
+    }
+    return options.filter((opt) => getOptionManufacturer(opt, type) === activeCompanyFilter);
+  }, [options, enableCompanyFilter, activeCompanyFilter, type]);
+
   // Intelligent multi-token & whole-word search with relevance ranking
   const filteredAndRanked = useMemo(() => {
     const q = query.toLowerCase().trim();
-    if (!q) return options;
+    if (!q) return baseFilteredOptions;
 
     const cleanQ = q.replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
     const qTokens = cleanQ.split(' ').filter(Boolean);
 
     const scored: Array<{ option: SearchOption; score: number }> = [];
 
-    for (const opt of options) {
+    for (const opt of baseFilteredOptions) {
       const name = opt.name.toLowerCase();
       const cleanName = name.replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
       const nameWithoutMfr = cleanName.replace(/^(amd|intel|nvidia|geforce)\s+/, '').trim();
@@ -143,9 +255,9 @@ export const SearchableHardwareSelect: React.FC<SearchableHardwareSelectProps> =
 
     // Sort descending by score
     return scored.sort((a, b) => b.score - a.score).map((r) => r.option);
-  }, [options, query]);
+  }, [baseFilteredOptions, query]);
 
-  const exactMatch = options.some(
+  const exactMatch = baseFilteredOptions.some(
     (opt) =>
       opt.name.toLowerCase().trim() === query.toLowerCase().trim() ||
       (opt.aliases && opt.aliases.some((a) => a.toLowerCase().trim() === query.toLowerCase().trim()))
@@ -157,7 +269,29 @@ export const SearchableHardwareSelect: React.FC<SearchableHardwareSelectProps> =
   return (
     <div className="relative w-full" ref={dropdownRef} id={`container-${id}`}>
       <label htmlFor={id} className="block text-sm font-medium text-zinc-300 mb-1.5 flex items-center justify-between">
-        <span>{label}</span>
+        <span className="flex items-center gap-2">
+          <span>{label}</span>
+          {enableCompanyFilter && activeCompanyFilter !== 'All' && (
+            <span
+              id={`badge-filter-${id}`}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded bg-indigo-950/90 text-indigo-300 border border-indigo-800/70"
+            >
+              Filter: {activeCompanyFilter}
+              <button
+                type="button"
+                id={`btn-clear-badge-${id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleFilterSelect('All');
+                }}
+                className="hover:text-white ml-0.5 cursor-pointer"
+                title="Clear company filter (show all)"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+        </span>
         {selectedOption?.isLaptop && (
           <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/60">
             <Laptop className="w-3 h-3" /> Laptop {type}
@@ -211,31 +345,157 @@ export const SearchableHardwareSelect: React.FC<SearchableHardwareSelectProps> =
           )}
         </div>
 
-        <ChevronDown
-          className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${
-            isOpen ? 'rotate-180 text-zinc-200' : ''
-          }`}
-        />
+        <div className="flex items-center gap-1.5">
+          {enableCompanyFilter && activeCompanyFilter !== 'All' && (
+            <span className="text-[11px] font-semibold text-indigo-300 bg-indigo-950/70 border border-indigo-800/60 px-1.5 py-0.5 rounded">
+              {activeCompanyFilter}
+            </span>
+          )}
+          <ChevronDown
+            className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${
+              isOpen ? 'rotate-180 text-zinc-200' : ''
+            }`}
+          />
+        </div>
       </div>
 
       {/* Floating Dropdown */}
       {isOpen && (
         <div className="absolute z-50 mt-1.5 w-full bg-zinc-900 border border-zinc-700/80 rounded-xl shadow-2xl overflow-hidden backdrop-blur-lg">
-          {/* Search box header */}
-          <div className="p-2.5 border-b border-zinc-800 bg-zinc-950/80">
-            <div className="relative">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                id={`input-search-${id}`}
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={`Search or choose your ${type}...`}
-                className="w-full bg-zinc-900 text-sm text-zinc-100 pl-9 pr-3 py-2 rounded-lg border border-zinc-700 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                autoFocus
-                onClick={(e) => e.stopPropagation()}
-              />
+          {/* Search box header with Company Filter */}
+          <div className="p-2.5 border-b border-zinc-800 bg-zinc-950/80 space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  id={`input-search-${id}`}
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={
+                    activeCompanyFilter !== 'All'
+                      ? `Search ${activeCompanyFilter} ${type}s...`
+                      : `Search or choose your ${type}...`
+                  }
+                  className="w-full bg-zinc-900 text-sm text-zinc-100 pl-9 pr-3 py-2 rounded-lg border border-zinc-700 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+
+              {/* Small Company Filter Button */}
+              {enableCompanyFilter && (
+                <div className="relative shrink-0" ref={filterMenuRef}>
+                  <button
+                    type="button"
+                    id={`btn-filter-${id}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsFilterMenuOpen((prev) => !prev);
+                    }}
+                    className={`px-2.5 py-2 rounded-lg text-xs font-semibold border flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      activeCompanyFilter !== 'All'
+                        ? 'bg-indigo-600/25 text-indigo-300 border-indigo-500/70 hover:bg-indigo-600/35 shadow-sm'
+                        : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:text-white'
+                    }`}
+                    title="Filter by manufacturer"
+                  >
+                    <Filter className="w-3.5 h-3.5" />
+                    <span>{activeCompanyFilter === 'All' ? 'Filter' : activeCompanyFilter}</span>
+                    <ChevronDown
+                      className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${
+                        isFilterMenuOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {/* Filter Menu Dropdown */}
+                  {isFilterMenuOpen && (
+                    <div
+                      id={`menu-filter-${id}`}
+                      className="absolute right-0 top-full mt-1.5 z-60 w-36 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-1 backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="px-2.5 py-1 text-[10px] font-bold text-zinc-400 uppercase tracking-wider border-b border-zinc-800 mb-1">
+                        Company Filter
+                      </div>
+                      {companyOptions.map((comp) => {
+                        const isSelected = activeCompanyFilter === comp;
+                        return (
+                          <button
+                            key={comp}
+                            type="button"
+                            id={`filter-opt-${id}-${comp.toLowerCase()}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleFilterSelect(comp);
+                              setIsFilterMenuOpen(false);
+                            }}
+                            className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-indigo-600/30 text-indigo-300 font-semibold'
+                                : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                            }`}
+                          >
+                            <span>{comp}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Quick Filter Pill Buttons Row */}
+            {enableCompanyFilter && (
+              <div className="flex items-center justify-between text-xs pt-0.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] text-zinc-400 font-medium flex items-center gap-1 mr-0.5">
+                    <Filter className="w-3 h-3 text-zinc-400" />
+                    Company:
+                  </span>
+                  {companyOptions.map((comp) => {
+                    const isSelected = activeCompanyFilter === comp;
+                    return (
+                      <button
+                        key={comp}
+                        type="button"
+                        id={`pill-filter-${id}-${comp.toLowerCase()}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleFilterSelect(comp);
+                        }}
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                            : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-zinc-200'
+                        }`}
+                      >
+                        {comp}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {activeCompanyFilter !== 'All' && (
+                  <button
+                    type="button"
+                    id={`btn-clear-filter-row-${id}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleFilterSelect('All');
+                    }}
+                    className="text-[11px] text-zinc-400 hover:text-white flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors cursor-pointer shrink-0 ml-1"
+                    title="Clear filter (show all)"
+                  >
+                    <X className="w-3 h-3" />
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* List items */}
@@ -289,7 +549,26 @@ export const SearchableHardwareSelect: React.FC<SearchableHardwareSelectProps> =
                   </button>
                 );
               })
-            ) : null}
+            ) : (
+              <div className="p-4 text-center text-xs text-zinc-400">
+                {enableCompanyFilter && activeCompanyFilter !== 'All' ? (
+                  <div className="space-y-1.5">
+                    <p>
+                      No {activeCompanyFilter} {type}s matched your search query "{query}".
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleFilterSelect('All')}
+                      className="text-indigo-400 hover:text-indigo-300 underline font-medium cursor-pointer"
+                    >
+                      Clear company filter to search all {type}s
+                    </button>
+                  </div>
+                ) : (
+                  <span>No {type}s found matching "{query}".</span>
+                )}
+              </div>
+            )}
 
             {/* Graceful Fallback if Hardware not found or user entered uncommon chip */}
             {showCustomNotice && (
@@ -347,3 +626,4 @@ export const SearchableHardwareSelect: React.FC<SearchableHardwareSelectProps> =
     </div>
   );
 };
+
