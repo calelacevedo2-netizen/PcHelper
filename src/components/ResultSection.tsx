@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -24,7 +24,9 @@ import {
   Check,
   FileText,
   Activity,
-  Tv
+  Tv,
+  Upload,
+  ArrowRight
 } from 'lucide-react';
 import {
   RecommendationResult,
@@ -39,6 +41,7 @@ import {
 } from '../types';
 import { SettingsExplainer } from './SettingsExplainer';
 import { OptimizationGuide } from './OptimizationGuide';
+import { findComparableBenchmarks, BenchmarkStats } from '../data/benchmarkStore';
 
 interface ResultSectionProps {
   result: RecommendationResult;
@@ -54,6 +57,9 @@ interface ResultSectionProps {
   currentTargetFps?: TargetFpsOption;
   customTargetFps?: number;
   onGoalChange?: (goal: OptimizationGoal, targetFps: TargetFpsOption, customFps?: number) => void;
+  onNavigateToSubmitBenchmark?: () => void;
+  onNavigateToRating?: () => void;
+  onNavigateToDiagnostic?: () => void;
 }
 
 export const ResultSection: React.FC<ResultSectionProps> = ({
@@ -69,11 +75,15 @@ export const ResultSection: React.FC<ResultSectionProps> = ({
   currentGoal = 'balanced',
   currentTargetFps = 'any',
   customTargetFps,
-  onGoalChange
+  onGoalChange,
+  onNavigateToSubmitBenchmark,
+  onNavigateToRating,
+  onNavigateToDiagnostic
 }) => {
   const [showSources, setShowSources] = useState(false);
   const [isGameNotesOpen, setIsGameNotesOpen] = useState(false);
-  const [isEvidenceOpen, setIsEvidenceOpen] = useState(true);
+  const [isEvidenceOpen, setIsEvidenceOpen] = useState(false);
+  const [isBenchmarkSamplesOpen, setIsBenchmarkSamplesOpen] = useState(false);
 
   // Status Color Palettes
   const statusConfig = {
@@ -153,8 +163,349 @@ export const ResultSection: React.FC<ResultSectionProps> = ({
     }
   }
 
+  // Query comparable real-world benchmark data from benchmarkStore
+  const comparableStats: BenchmarkStats = useMemo(() => {
+    return findComparableBenchmarks({
+      gameId: game.id,
+      gameName: game.name,
+      gpuId: gpu.id,
+      resolution,
+      deviceType: effectiveDeviceType
+    });
+  }, [game.id, game.name, gpu.id, resolution, effectiveDeviceType]);
+
+  // Derive "How Your PC Will Run This" structured analysis
+  const howWillItRun = useMemo(() => {
+    // 1. Estimated Performance Range
+    const estimatedFps = result.hasSufficientFpsEvidence && result.renderedFpsRange
+      ? result.renderedFpsRange
+      : comparableStats.count >= 2
+      ? `${comparableStats.typicalRangeMin}–${comparableStats.typicalRangeMax} FPS`
+      : 'Qualitative Assessment (See details below)';
+
+    // 2. Gameplay Experience
+    let experience = 'Mostly smooth at the selected settings with reliable responsiveness.';
+    if (result.performanceCategory === 'Excellent') {
+      experience = 'Smooth, fluid performance at high/ultra settings with excellent frame delivery.';
+    } else if (result.performanceCategory === 'Playable') {
+      experience = 'Playable performance with occasional dips in demanding combat or dense scenes.';
+    } else if (result.performanceCategory === 'Reduced settings recommended') {
+      experience = 'Struggles at standard settings; requires optimized low/medium settings or aggressive upscaling.';
+    } else if (result.performanceCategory === 'Below minimum spec') {
+      experience = 'Below recommended thresholds; noticeable stuttering and low framerates expected.';
+    }
+
+    // 3. Main Limitation
+    let mainLimitation = 'GPU performance';
+    if (result.limitation === 'VRAM') {
+      mainLimitation = 'VRAM capacity limit';
+    } else if (result.limitation === 'CPU') {
+      mainLimitation = 'CPU draw-call throughput';
+    } else if (result.limitation === 'RAM') {
+      mainLimitation = 'System RAM capacity';
+    } else if (result.memoryChannel === 'Single-Channel' && ram >= 16) {
+      mainLimitation = 'Single-Channel memory bandwidth';
+    } else if (result.limitation === 'Balanced') {
+      mainLimitation = 'Well-balanced (No critical single bottleneck)';
+    }
+
+    // 4. Potential Issue
+    let potentialIssue = 'None identified for standard play.';
+    if (gpu.vram <= 4 && (game.demandProfile?.vramSensitivity === 'High' || game.demandProfile?.vramSensitivity === 'Extreme' || resolution !== '1080p')) {
+      potentialIssue = '4GB VRAM may become a limitation at higher texture settings.';
+    } else if (result.memoryChannel === 'Single-Channel') {
+      potentialIssue = 'Single-channel memory bandwidth can cause micro-stutters and lower 1% low frame rates during camera pans.';
+    } else if (ram < 16 && game.recommendedRequirements.ramGb >= 16) {
+      potentialIssue = '8GB RAM is close to limits; background apps or Discord may cause paging hitching.';
+    } else if (isLaptop && (gpu.name.includes('3050') || gpu.name.includes('4050') || gpu.name.includes('2050'))) {
+      potentialIssue = 'Mobile TGP power limits may restrict peak boost clocks during sustained thermal loads.';
+    }
+
+    // 5. Confidence
+    const confidence = result.confidence || (comparableStats.count >= 3 ? 'High' : comparableStats.count >= 1 ? 'Medium' : 'Low');
+
+    return {
+      estimatedFps,
+      experience,
+      mainLimitation,
+      potentialIssue,
+      confidence
+    };
+  }, [result, comparableStats, gpu, ram, isLaptop, game, resolution]);
+
   return (
     <div className="w-full space-y-6 pt-2" id="results-display">
+      {/* =====================================================================
+          CORE UPGRADE: HOW YOUR PC WILL RUN THIS (Configuration-Aware Analysis)
+          ===================================================================== */}
+      <div
+        id="how-your-pc-will-run-card"
+        className="p-5 md:p-7 rounded-2xl bg-gradient-to-br from-[#0e1329] via-[#0a0d1e] to-[#070a16] border border-indigo-500/50 shadow-2xl space-y-4"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-indigo-900/60">
+          <div className="flex items-center gap-2.5">
+            <span className="p-2 rounded-xl bg-indigo-950 text-indigo-300 border border-indigo-700/60">
+              <Sparkles className="w-5 h-5 text-indigo-400" />
+            </span>
+            <div>
+              <h3 className="text-base sm:text-lg md:text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
+                <span>How Your PC Will Run This</span>
+              </h3>
+              <p className="text-xs text-zinc-400">
+                Configuration-specific performance analysis for {game.name} @ {resolution}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-center">
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${
+              howWillItRun.confidence === 'High'
+                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
+                : howWillItRun.confidence === 'Medium'
+                ? 'bg-sky-950/80 text-sky-300 border-sky-700/60'
+                : 'bg-amber-950/80 text-amber-300 border-amber-700/60'
+            }`}>
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Confidence: {howWillItRun.confidence}</span>
+            </span>
+          </div>
+        </div>
+
+        {/* 4-Box Key Highlights Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-1">
+          {/* Box 1: Estimated Performance */}
+          <div className="p-3.5 rounded-xl bg-zinc-900/90 border border-indigo-900/70 space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-300 block">
+              Estimated Performance
+            </span>
+            <div className="text-xl sm:text-2xl font-black text-white font-mono">
+              {howWillItRun.estimatedFps}
+            </div>
+            <p className="text-[10px] text-zinc-400">
+              {result.hasSufficientFpsEvidence ? 'Range based on verified telemetry.' : 'Qualitative range without fake numbers.'}
+            </p>
+          </div>
+
+          {/* Box 2: Experience */}
+          <div className="p-3.5 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-300 block">
+              Experience
+            </span>
+            <p className="text-xs text-zinc-200 leading-snug font-medium pt-0.5">
+              {howWillItRun.experience}
+            </p>
+          </div>
+
+          {/* Box 3: Main Limitation */}
+          <div className="p-3.5 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400 block">
+              Main Limitation
+            </span>
+            <div className="text-sm font-bold text-zinc-100 pt-0.5">
+              {howWillItRun.mainLimitation}
+            </div>
+            <p className="text-[10px] text-zinc-400">
+              Primary hardware bottleneck for this specific title.
+            </p>
+          </div>
+
+          {/* Box 4: Potential Issue */}
+          <div className="p-3.5 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-rose-300 block">
+              Potential Issue
+            </span>
+            <p className="text-xs text-zinc-300 leading-snug pt-0.5">
+              {howWillItRun.potentialIssue}
+            </p>
+          </div>
+        </div>
+
+        {/* Action Bar (Cross-Feature Integrations) */}
+        <div className="pt-3 border-t border-[#1f2842] flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            {onNavigateToSubmitBenchmark && (
+              <button
+                type="button"
+                id="btn-submit-real-benchmark"
+                onClick={onNavigateToSubmitBenchmark}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-md shadow-indigo-600/30"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Submit My Real Benchmark</span>
+              </button>
+            )}
+
+            {onNavigateToRating && (
+              <button
+                type="button"
+                id="btn-rate-in-game-fps"
+                onClick={onNavigateToRating}
+                className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Gauge className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Compare With Benchmark Rating</span>
+              </button>
+            )}
+
+            {onNavigateToDiagnostic && result.overallStatus !== 'green' && (
+              <button
+                type="button"
+                id="btn-diagnose-fps"
+                onClick={onNavigateToDiagnostic}
+                className="px-3 py-1.5 rounded-lg bg-amber-950/60 hover:bg-amber-900/60 text-amber-200 border border-amber-800/60 font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Activity className="w-3.5 h-3.5 text-amber-400" />
+                <span>Diagnose Performance Drop</span>
+              </button>
+            )}
+          </div>
+
+          <span className="text-[11px] text-zinc-400 italic">
+            Evidence-based analysis • Never AI hallucinated numbers
+          </span>
+        </div>
+      </div>
+
+      {/* =====================================================================
+          CORE UPGRADE: REAL-WORLD BENCHMARK DATA EXPLORER
+          ===================================================================== */}
+      {comparableStats.count > 0 && (
+        <div
+          id="real-world-benchmark-data-card"
+          className="p-5 md:p-6 rounded-2xl bg-[#0a0d1a] border border-[#1f2842] shadow-xl space-y-4"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#1b233a]">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-sky-950 text-sky-400 border border-sky-800/60">
+                  <Activity className="w-4 h-4" />
+                </span>
+                <h4 className="text-sm sm:text-base font-bold text-white">
+                  Real-World Benchmark Data
+                </h4>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
+                  {comparableStats.count} {comparableStats.count === 1 ? 'sample' : 'samples'} ({comparableStats.verifiedCount} verified)
+                </span>
+              </div>
+              <p className="text-xs text-zinc-400 mt-1">
+                <strong>{game.name}</strong> • {gpu.name} ({effectiveDeviceType === 'laptop' ? 'Laptop' : 'Desktop'}) • {resolution}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              id="btn-toggle-benchmark-samples"
+              onClick={() => setIsBenchmarkSamplesOpen(!isBenchmarkSamplesOpen)}
+              className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 self-start sm:self-center cursor-pointer transition-colors"
+            >
+              <span>{isBenchmarkSamplesOpen ? 'Hide Benchmark Details' : 'View Benchmark Details'}</span>
+              {isBenchmarkSamplesOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+          </div>
+
+          {/* Comparable Results Summary Chips */}
+          <div className="space-y-2">
+            <div className="text-xs font-semibold text-zinc-300 flex items-center gap-2">
+              <span>Comparable Results:</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {comparableStats.allAvgFps.slice(0, 8).map((fps, i) => (
+                  <span
+                    key={i}
+                    className="px-2 py-0.5 rounded-md bg-zinc-900 border border-zinc-700/80 text-zinc-200 font-mono text-xs font-semibold"
+                  >
+                    {fps} FPS
+                  </span>
+                ))}
+                {comparableStats.allAvgFps.length > 8 && (
+                  <span className="text-[11px] text-zinc-500">
+                    +{comparableStats.allAvgFps.length - 8} more
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Statistical Summary Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+              <div className="p-2.5 rounded-lg bg-zinc-900/80 border border-zinc-800 text-xs">
+                <span className="text-zinc-500 block text-[10px] uppercase font-bold">Median Average FPS</span>
+                <span className="text-base font-black text-indigo-300 font-mono">
+                  {comparableStats.medianAvgFps} FPS
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-zinc-900/80 border border-zinc-800 text-xs">
+                <span className="text-zinc-500 block text-[10px] uppercase font-bold">Typical Normal Range</span>
+                <span className="text-base font-black text-emerald-400 font-mono">
+                  {comparableStats.typicalRangeMin}–{comparableStats.typicalRangeMax} FPS
+                </span>
+              </div>
+
+              {comparableStats.medianLow1Percent ? (
+                <div className="p-2.5 rounded-lg bg-zinc-900/80 border border-zinc-800 text-xs col-span-2 sm:col-span-1">
+                  <span className="text-zinc-500 block text-[10px] uppercase font-bold">Median 1% Low</span>
+                  <span className="text-base font-black text-sky-400 font-mono">
+                    {comparableStats.medianLow1Percent} FPS
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Expandable Benchmark Details Table */}
+          {isBenchmarkSamplesOpen && (
+            <div className="pt-3 border-t border-[#1b233a] space-y-3 animate-in fade-in duration-150">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-zinc-300">
+                  <thead className="bg-zinc-950/80 text-[10px] uppercase font-bold text-zinc-400 border-b border-zinc-800">
+                    <tr>
+                      <th className="py-2 px-2.5">Source</th>
+                      <th className="py-2 px-2.5">System Specs</th>
+                      <th className="py-2 px-2.5">Resolution / Preset</th>
+                      <th className="py-2 px-2.5 text-right">Avg FPS</th>
+                      <th className="py-2 px-2.5 text-right">1% Low</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/60 font-mono text-[11px]">
+                    {comparableStats.samples.map((s) => (
+                      <tr key={s.id} className="hover:bg-zinc-900/50 transition-colors">
+                        <td className="py-2 px-2.5 font-sans">
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                            s.source === 'verified'
+                              ? 'bg-emerald-950/70 text-emerald-300 border-emerald-800/60'
+                              : 'bg-purple-950/70 text-purple-300 border-purple-800/60'
+                          }`}>
+                            {s.source === 'verified' ? 'Verified Lab' : 'Community'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2.5 font-sans">
+                          <div className="font-semibold text-zinc-200">
+                            {s.deviceModelName || s.gpuName}
+                          </div>
+                          <div className="text-[10px] text-zinc-500 font-mono">
+                            {s.cpuName} • {s.ramGb}GB {s.memoryChannel} {s.tgpWatts ? `(${s.tgpWatts})` : ''}
+                          </div>
+                        </td>
+                        <td className="py-2 px-2.5">
+                          <div>{s.resolution} • {s.preset}</div>
+                          <div className="text-[10px] text-zinc-500">
+                            {s.upscaling || 'Native'} {s.rayTracing ? '• RT On' : ''}
+                          </div>
+                        </td>
+                        <td className="py-2 px-2.5 text-right font-black text-indigo-300 text-xs">
+                          {s.avgFps} FPS
+                        </td>
+                        <td className="py-2 px-2.5 text-right text-emerald-400">
+                          {s.low1PercentFps ? `${s.low1PercentFps} FPS` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {/* 1. Expected Performance Card */}
       <div
         id="overall-result-card"

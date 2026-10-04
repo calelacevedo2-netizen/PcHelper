@@ -19,7 +19,9 @@ import {
   Sliders,
   Gauge,
   Zap,
-  Activity
+  Activity,
+  Upload,
+  TrendingUp
 } from 'lucide-react';
 import { GPUS_DATABASE } from './data/gpus';
 import { CPUS_DATABASE } from './data/cpus';
@@ -34,6 +36,8 @@ import { PcTierSection } from './components/PcTierSection';
 import { FpsDiagnosticSection } from './components/FpsDiagnosticSection';
 import { BenchmarkRatingSection } from './components/BenchmarkRatingSection';
 import { LaptopRealitySection } from './components/LaptopRealitySection';
+import { SubmitBenchmarkSection } from './components/SubmitBenchmarkSection';
+import { BeforeAfterSection } from './components/BeforeAfterSection';
 import { evaluateSystem } from './logic/evaluator';
 import { evaluatePcTier } from './logic/pcTierEvaluator';
 import { getDeviceRamSpecs, evaluateRamUpgrade } from './data/ramCompatibility';
@@ -54,8 +58,8 @@ import {
 } from './types';
 
 export default function App() {
-  // Navigation Tabs: 'checker' = Game Checker, 'diagnostic' = FPS Diagnostic, 'rating' = Benchmark Rating, 'laptop' = Laptop Reality, 'tier' = PC Tier
-  const [activeTab, setActiveTab] = useState<'checker' | 'diagnostic' | 'rating' | 'laptop' | 'tier'>('checker');
+  // Navigation Tabs: 'checker' = Game Checker, 'diagnostic' = FPS Diagnostic, 'rating' = Benchmark Rating, 'compare' = Before vs After, 'submit' = Submit Benchmark, 'laptop' = Laptop Reality, 'tier' = PC Tier
+  const [activeTab, setActiveTab] = useState<'checker' | 'diagnostic' | 'rating' | 'compare' | 'submit' | 'laptop' | 'tier'>('checker');
 
   // Step 1: Device Type selection ('desktop' | 'laptop' | null)
   const [deviceType, setDeviceType] = useState<DeviceType | null>(null);
@@ -634,6 +638,38 @@ export default function App() {
             </button>
             <button
               type="button"
+              id="tab-before-after"
+              onClick={() => {
+                setActiveTab('compare');
+                setValidationError(null);
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-xs sm:text-sm transition-all cursor-pointer ${
+                activeTab === 'compare'
+                  ? 'bg-gradient-to-r from-violet-600 via-purple-600 to-sky-500 text-white font-bold shadow-[0_0_20px_-3px_rgba(168,85,247,0.4)] border border-purple-400/30'
+                  : 'text-zinc-300 hover:text-white hover:bg-zinc-800/60'
+              }`}
+            >
+              <TrendingUp className="w-4 h-4" />
+              <span>Before vs After</span>
+            </button>
+            <button
+              type="button"
+              id="tab-submit-benchmark"
+              onClick={() => {
+                setActiveTab('submit');
+                setValidationError(null);
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-xs sm:text-sm transition-all cursor-pointer ${
+                activeTab === 'submit'
+                  ? 'bg-gradient-to-r from-violet-600 via-purple-600 to-sky-500 text-white font-bold shadow-[0_0_20px_-3px_rgba(168,85,247,0.4)] border border-purple-400/30'
+                  : 'text-zinc-300 hover:text-white hover:bg-zinc-800/60'
+              }`}
+            >
+              <Upload className="w-4 h-4" />
+              <span>Submit Benchmark</span>
+            </button>
+            <button
+              type="button"
               id="tab-laptop-reality"
               onClick={() => {
                 setActiveTab('laptop');
@@ -670,19 +706,25 @@ export default function App() {
         {/* Dynamic Intro Hero Box */}
         <div className="text-center space-y-2">
           <h2 className="text-2xl sm:text-3xl font-extrabold text-zinc-100 tracking-tight">
-            {activeTab === 'checker' && 'Will Your Hardware Run This Game?'}
+            {activeTab === 'checker' && 'How Will Your Hardware Run This Game?'}
             {activeTab === 'diagnostic' && 'Why Am I Getting This FPS?'}
             {activeTab === 'rating' && 'Is My PC Performing Normally?'}
+            {activeTab === 'compare' && 'Compare Benchmark Runs & Upgrades'}
+            {activeTab === 'submit' && 'Submit My Real Benchmark'}
             {activeTab === 'laptop' && 'Exact Laptop Hardware & Performance Reality'}
             {activeTab === 'tier' && 'What Tier Is Your Gaming PC?'}
           </h2>
           <p className="text-zinc-400 text-xs sm:text-sm md:text-base max-w-2xl mx-auto leading-relaxed">
             {activeTab === 'checker' &&
-              'Select your components and a target game to receive evidence-based framerate estimates, bottleneck detection, and custom in-game graphics settings.'}
+              'Select your exact components and target title to receive evidence-based performance ranges, bottleneck diagnostics, and custom in-game graphics settings.'}
             {activeTab === 'diagnostic' &&
               'Diagnose why your actual in-game framerate is lower than expected, identify the limiting component, and see what to change first.'}
             {activeTab === 'rating' &&
               'Compare real in-game benchmark results against verified hardware data to check if your system is performing Below Typical, Typical, Above Typical, or Exceptional.'}
+            {activeTab === 'compare' &&
+              'Direct side-by-side performance comparison of two benchmark runs: evaluate RAM channel upgrades, graphic presets, upscaling, or thermal profiles.'}
+            {activeTab === 'submit' &&
+              'Contribute your real in-game FPS measurements to expand PC Gaming Helper’s community benchmark telemetry and comparison accuracy.'}
             {activeTab === 'laptop' &&
               'Explore real-world benchmarks, verified TGP power limits, cooling architectures, and RAM configurations across specific laptop models.'}
             {activeTab === 'tier' &&
@@ -1816,6 +1858,9 @@ export default function App() {
                   checkerFormRef.current?.scrollIntoView({ behavior: 'smooth' });
                 }}
                 onClose={handleCloseGameResults}
+                onNavigateToSubmitBenchmark={() => setActiveTab('submit')}
+                onNavigateToRating={() => setActiveTab('rating')}
+                onNavigateToDiagnostic={() => setActiveTab('diagnostic')}
               />
             </div>
           ) : activeTab === 'checker' && !result ? (
@@ -1906,6 +1951,27 @@ export default function App() {
             initialMemoryChannel={selectedMemoryChannel}
             initialGame={selectedGame}
             initialResolution={selectedResolution}
+          />
+        )}
+
+        {/* Tab: Before vs After Benchmark Comparison */}
+        {activeTab === 'compare' && (
+          <BeforeAfterSection />
+        )}
+
+        {/* Tab: Submit My Real Benchmark */}
+        {activeTab === 'submit' && (
+          <SubmitBenchmarkSection
+            initialDeviceType={deviceType}
+            initialDevice={selectedDevice}
+            initialGpuId={selectedGpuId}
+            initialCpuId={selectedCpuId}
+            initialRam={selectedRam}
+            initialVram={selectedVram}
+            initialMemoryChannel={selectedMemoryChannel}
+            initialGame={selectedGame}
+            initialResolution={selectedResolution}
+            onNavigateToRating={() => setActiveTab('rating')}
           />
         )}
 

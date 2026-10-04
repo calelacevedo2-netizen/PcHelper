@@ -45,6 +45,22 @@ import {
 } from '../types';
 import { evaluateBenchmarkRating } from '../logic/benchmarkRatingEvaluator';
 
+export interface DiagnosticCarryOverData {
+  gpuName?: string;
+  cpuName?: string;
+  ramGb?: number;
+  vramGb?: number;
+  memoryChannel?: MemoryChannel;
+  game?: Game | null;
+  resolution?: Resolution;
+  preset?: string;
+  actualFps?: number;
+  low1PercentFps?: number;
+  isLaptop?: boolean;
+  laptopModelName?: string;
+  deviceTgpWatts?: string;
+}
+
 interface BenchmarkRatingSectionProps {
   initialDeviceType?: DeviceType | null;
   initialDevice?: DeviceModel | null;
@@ -55,10 +71,14 @@ interface BenchmarkRatingSectionProps {
   initialMemoryChannel?: MemoryChannel;
   initialGame?: Game | null;
   initialResolution?: Resolution;
+  onNavigateToDiagnostic?: (data: DiagnosticCarryOverData) => void;
+  onNavigateToSubmitBenchmark?: (data?: any) => void;
 }
 
 export const BenchmarkRatingSection: React.FC<BenchmarkRatingSectionProps> = ({
-  initialGame
+  initialGame,
+  onNavigateToDiagnostic,
+  onNavigateToSubmitBenchmark
 }) => {
   // Input IDs for accessibility
   const avgFpsInputId = useId();

@@ -370,6 +370,8 @@ export interface DeviceBenchmark {
   avgFps: number;
   low1PercentFps?: number;
   upscaling?: string;
+  rayTracing?: string | boolean;
+  notes?: string;
   source: string;
 }
 
